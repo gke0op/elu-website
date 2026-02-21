@@ -216,25 +216,41 @@ function APIKeyWizard({ onComplete, onBack }) {
   const [testResult, setTestResult] = useState(null);
   const [showKey, setShowKey] = useState(false);
 
+  const [errorDetail, setErrorDetail] = useState("");
   const testApiKey = async () => {
     if (!apiKey.trim()) return;
     setTestResult("testing");
-    try {
-      const res = await fetch(
-        GEMINI_CONFIG.testEndpoint(apiKey.trim()),
-        { method: "POST", headers: GEMINI_CONFIG.testHeaders, body: GEMINI_CONFIG.testBody }
-      );
-      if (res.ok) {
-        localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
-        setTestResult("success");
-      } else {
-        console.error(`Gemini test failed:`, await res.text().catch(() => ""));
-        setTestResult("error");
+    setErrorDetail("");
+    // Try primary model, then fallback
+    const models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+    for (const model of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: GEMINI_CONFIG.testHeaders,
+          body: GEMINI_CONFIG.testBody,
+        });
+        if (res.ok) {
+          localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
+          setTestResult("success");
+          return;
+        }
+        const errText = await res.text().catch(() => "");
+        console.error(`Gemini test (${model}) ${res.status}:`, errText);
+        try {
+          const errJson = JSON.parse(errText);
+          const msg = errJson?.error?.message || `HTTP ${res.status}`;
+          setErrorDetail(msg);
+        } catch { setErrorDetail(`HTTP ${res.status}`); }
+        // If 400 (invalid key), don't try other models
+        if (res.status === 400) { setTestResult("error"); return; }
+      } catch (e) {
+        console.error(`Gemini test (${model}) network error:`, e);
+        setErrorDetail(`Network error: ${e.message}`);
       }
-    } catch (e) {
-      console.error(`Gemini test error:`, e);
-      setTestResult("error");
     }
+    setTestResult("error");
   };
 
   const keyValid = testResult === "success" || hasKey();
@@ -366,6 +382,7 @@ function APIKeyWizard({ onComplete, onBack }) {
             {testResult === "error" && (
               <div style={{ padding: "10px 16px", borderRadius: 8, background: "#ef444415", border: "1px solid #ef444444", color: "#ef4444", fontSize: 11, marginBottom: 16, lineHeight: 1.5 }}>
                 ❌ Key rejected. Make sure you copied the full key from <a href={GEMINI_CONFIG.studioUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa", textDecoration: "underline" }}>Google AI Studio</a>.
+                {errorDetail && <div style={{ marginTop: 6, fontSize: 9, color: "#ef444488", wordBreak: "break-all" }}>Detail: {errorDetail}</div>}
               </div>
             )}
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
