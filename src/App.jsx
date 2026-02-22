@@ -1,34 +1,22 @@
 import { useState, useEffect, Component } from "react";
 import PECEngine from "./PECEngine";
+import { getActiveProvider } from "./providers";
 import "./App.css";
 
 // ═══════════════════════════════════════════════════════════════
 // ELU PEC ENGINE v2.0 — App Shell with Onboarding
 // Homepage → API Key Setup OR Manual Tutorial → Engine
+// Zero-Claw Backbone — Agent-Agnostic Architecture
 // ═══════════════════════════════════════════════════════════════
-
-const GEMINI_CONFIG = {
-  id: "gemini",
-  name: "Gemini 2.0 Flash",
-  icon: "✨",
-  keyLabel: "Google API Key",
-  lsKey: "elu_gemini_api_key",
-  studioUrl: "https://aistudio.google.com/apikey",
-  studioLabel: "Google AI Studio",
-  placeholder: "AIzaSy... (paste your Google key)",
-  testEndpoint: () => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
-  testBody: JSON.stringify({ contents: [{ parts: [{ text: "Reply with only: OK" }] }] }),
-  testHeaders: (key) => ({ "Content-Type": "application/json", "x-goog-api-key": key }),
-};
 
 const LS_ONBOARDED = "elu_onboarded";
 
 function getStoredKey() {
-  return localStorage.getItem(GEMINI_CONFIG.lsKey) || "";
+  return getActiveProvider().getKey();
 }
 
 function hasKey() {
-  return !!localStorage.getItem(GEMINI_CONFIG.lsKey);
+  return !!getActiveProvider().getKey();
 }
 
 // ── Error Boundary ──────────────────────────────────────────
@@ -221,48 +209,24 @@ function APIKeyWizard({ onComplete, onBack }) {
     if (!apiKey.trim()) return;
     setTestResult("testing");
     setErrorDetail("");
-    // Try primary model, then fallback
-    const models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
-    for (const model of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: GEMINI_CONFIG.testHeaders(apiKey.trim()),
-          body: GEMINI_CONFIG.testBody,
-        });
-        if (res.ok) {
-          localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
-          setTestResult("success");
-          return;
-        }
-        // 429 = key IS valid, just rate limited (free tier)
-        if (res.status === 429) {
-          localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
-          setTestResult("free");
-          return;
-        }
-        const errText = await res.text().catch(() => "");
-        console.error(`Gemini test (${model}) ${res.status}:`, errText);
-        try {
-          const errJson = JSON.parse(errText);
-          const msg = errJson?.error?.message || `HTTP ${res.status}`;
-          setErrorDetail(msg);
-        } catch { setErrorDetail(`HTTP ${res.status}`); }
-        // If 400 (invalid key), don't try other models
-        if (res.status === 400) { setTestResult("error"); return; }
-      } catch (e) {
-        console.error(`Gemini test (${model}) network error:`, e);
-        setErrorDetail(`Network error: ${e.message}`);
+    const provider = getActiveProvider();
+    try {
+      const result = await provider.testKey(apiKey.trim());
+      setTestResult(result);
+      if (result === "success" || result === "free") {
+        provider.saveKey(apiKey.trim());
       }
+    } catch (e) {
+      setErrorDetail(e.message || "Unknown error");
+      setTestResult("error");
     }
-    setTestResult("error");
   };
 
   const keyValid = testResult === "success" || testResult === "free" || hasKey();
 
   const handleComplete = () => {
-    if (apiKey.trim()) localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
+    const provider = getActiveProvider();
+    if (apiKey.trim()) provider.saveKey(apiKey.trim());
     localStorage.setItem(LS_ONBOARDED, "true");
     onComplete();
   };
@@ -328,7 +292,7 @@ function APIKeyWizard({ onComplete, onBack }) {
               ))}
             </div>
             <a
-              href={GEMINI_CONFIG.studioUrl}
+              href={getActiveProvider().getKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -367,7 +331,7 @@ function APIKeyWizard({ onComplete, onBack }) {
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={e => { setApiKey(e.target.value); setTestResult(null); }}
-                placeholder={GEMINI_CONFIG.placeholder}
+                placeholder={getActiveProvider().keyPlaceholder}
                 style={{
                   width: "100%", padding: "14px 50px 14px 16px", borderRadius: 10,
                   border: `2px solid ${testResult === "success" ? "#22c55e" : testResult === "error" ? "#ef4444" : "#2a2a3a"}`,
@@ -392,7 +356,7 @@ function APIKeyWizard({ onComplete, onBack }) {
             )}
             {testResult === "error" && (
               <div style={{ padding: "10px 16px", borderRadius: 8, background: "#ef444415", border: "1px solid #ef444444", color: "#ef4444", fontSize: 11, marginBottom: 16, lineHeight: 1.5 }}>
-                ❌ Key rejected. Make sure you copied the full key from <a href={GEMINI_CONFIG.studioUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa", textDecoration: "underline" }}>Google AI Studio</a>.
+                ❌ Key rejected. Make sure you copied the full key from <a href={getActiveProvider().getKeyUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa", textDecoration: "underline" }}>Get API Key</a>.
                 {errorDetail && <div style={{ marginTop: 6, fontSize: 9, color: "#ef444488", wordBreak: "break-all" }}>Detail: {errorDetail}</div>}
               </div>
             )}
