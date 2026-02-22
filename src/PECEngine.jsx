@@ -329,36 +329,77 @@ function extractJSON(fullText) {
 
 // ─── GEMINI RESEARCH ─────────────────────────────────────────
 
-async function runGeminiResearch(techQuery, apiKey, onProgress) {
-  const userPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n---\n\nResearch this sustainable technology thoroughly and provide a PEC assessment: "${techQuery}"\n\nSearch for current market data, recent developments, key companies, carbon impact studies, and technology readiness information. Be thorough — this assessment will be used for investment grading.`;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function callGemini(apiKey, prompt, useGrounding) {
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 4000 },
+  };
+  if (useGrounding) body.tools = [{ google_search: {} }];
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: userPrompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 4000 },
-      }),
+      body: JSON.stringify(body),
     }
   );
+  return response;
+}
+
+async function runGeminiResearch(techQuery, apiKey, onProgress) {
+  const userPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n---\n\nResearch this sustainable technology thoroughly and provide a PEC assessment: "${techQuery}"\n\nSearch for current market data, recent developments, key companies, carbon impact studies, and technology readiness information. Be thorough — this assessment will be used for investment grading.`;
+
+  // ── ATTEMPT 1: Power Mode (grounded search) ──
+  onProgress({ stage: "researching", message: "⚡ Power Mode — researching with Google Search..." });
+  let response = await callGemini(apiKey, userPrompt, true);
+
+  let mode = "power";
+
+  // ── If 429: switch to Free Mode (no grounding + retry with backoff) ──
+  if (response.status === 429) {
+    mode = "free";
+    onProgress({ stage: "researching", message: "🆓 Free tier detected — switching to Free Mode (no search grounding)..." });
+    await sleep(2000);
+
+    const FREE_DELAYS = [0, 10, 20, 30, 45];
+    for (let attempt = 0; attempt < FREE_DELAYS.length; attempt++) {
+      const delaySec = FREE_DELAYS[attempt];
+      if (delaySec > 0) {
+        for (let s = delaySec; s > 0; s--) {
+          onProgress({ stage: "researching", message: `🆓 Free Mode — rate limited, retrying in ${s}s... (attempt ${attempt + 1}/${FREE_DELAYS.length})` });
+          await sleep(1000);
+        }
+      }
+      onProgress({ stage: "researching", message: `🆓 Free Mode — sending research request (attempt ${attempt + 1})...` });
+      response = await callGemini(apiKey, userPrompt, false);
+
+      if (response.ok) break;
+      if (response.status !== 429) break; // non-rate-limit error, let it fall through
+    }
+  }
 
   if (!response.ok) {
     const errText = await response.text();
+    if (response.status === 429) {
+      throw new Error("Rate limit exceeded on all retries. Free tier has limited requests/minute. Wait 60s and try again, or upgrade to a billing-enabled key for instant results.");
+    }
     throw new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
   }
 
-  onProgress({ stage: "researching", message: "Gemini is researching with Google Search..." });
+  const modeLabel = mode === "power" ? "⚡ Power Mode (grounded)" : "🆓 Free Mode";
+  onProgress({ stage: "researching", message: `${modeLabel} — parsing research data...` });
+
   const data = await response.json();
   const candidates = data.candidates || [];
   const textParts = candidates[0]?.content?.parts?.filter(p => p.text) || [];
   const fullText = textParts.map(p => p.text).join("\n");
   if (!fullText) throw new Error("Empty response from Gemini");
 
-  onProgress({ stage: "parsing", message: "Parsing research data..." });
-  return { parsed: extractJSON(fullText), model: "gemini-2.0-flash" };
+  onProgress({ stage: "parsing", message: `${modeLabel} — structuring PEC scores...` });
+  return { parsed: extractJSON(fullText), model: "gemini-2.0-flash", mode };
 }
 
 // ─── UNIFIED RESEARCH DISPATCHER ─────────────────────────────
@@ -374,8 +415,9 @@ async function runAIResearch(techQuery, onProgress) {
 
   try {
     const result = await runGeminiResearch(techQuery, apiKey, onProgress);
-    onProgress({ stage: "complete", message: "Research complete!" });
-    return { success: true, data: result.parsed, model: result.model };
+    const modeMsg = result.mode === "power" ? "⚡ Power Mode" : "🆓 Free Mode";
+    onProgress({ stage: "complete", message: `Research complete! (${modeMsg})` });
+    return { success: true, data: result.parsed, model: result.model, mode: result.mode };
   } catch (error) {
     onProgress({ stage: "error", message: error.message });
     return { success: false, error: error.message };
@@ -558,23 +600,24 @@ function ResearchTerminal({ onMint }) {
     const res = await runAIResearch(q, (progress) => {
       setStatus(progress);
       if (progress.stage === "connecting") addLog(`${AI_PROVIDER.name} connected. Deploying research...`, "info");
-      if (progress.stage === "researching") addLog("Searching global databases for technology data...", "search");
-      if (progress.stage === "parsing") addLog("Parsing structured assessment...", "info");
-      if (progress.stage === "complete") addLog("Research complete! Card data ready.", "success");
+      if (progress.stage === "researching") addLog(progress.message, "search");
+      if (progress.stage === "parsing") addLog(progress.message, "info");
+      if (progress.stage === "complete") addLog(progress.message, "success");
       if (progress.stage === "error") addLog(`Error: ${progress.message}`, "error");
     });
 
     if (res.success) {
       const d = res.data;
+      const modeTag = res.mode === "power" ? "⚡ Power Mode (grounded)" : "🆓 Free Mode";
+      addLog(`Research mode: ${modeTag}`, "info");
       addLog(`Technology: ${d.name}`, "data");
-      addLog("Parsing structured research data...", "info");
       addLog(`Model: ${res.model}`, "info");
       addLog(`Sector: ${d.sector}`, "data");
       addLog(`P=${d.p_score} E=${d.e_score} C=${d.c_score}`, "data");
       addLog(`CMP = ${computeCMP(d.p_score, d.e_score, d.c_score).toLocaleString()}`, "data");
       if (d.market_size_current_usd) addLog(`Market: ${d.market_size_current_usd} → ${d.market_size_projected_usd}`, "data");
       if (d.co2_impact) addLog(`CO₂ Impact: ${d.co2_impact}`, "data");
-      setResult({ ...d, model: res.model });
+      setResult({ ...d, model: res.model, researchMode: res.mode });
     } else {
       setError(res.error);
     }
