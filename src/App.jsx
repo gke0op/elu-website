@@ -236,6 +236,12 @@ function APIKeyWizard({ onComplete, onBack }) {
           setTestResult("success");
           return;
         }
+        // 429 = key IS valid, just rate limited (free tier)
+        if (res.status === 429) {
+          localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
+          setTestResult("free");
+          return;
+        }
         const errText = await res.text().catch(() => "");
         console.error(`Gemini test (${model}) ${res.status}:`, errText);
         try {
@@ -253,7 +259,7 @@ function APIKeyWizard({ onComplete, onBack }) {
     setTestResult("error");
   };
 
-  const keyValid = testResult === "success" || hasKey();
+  const keyValid = testResult === "success" || testResult === "free" || hasKey();
 
   const handleComplete = () => {
     if (apiKey.trim()) localStorage.setItem(GEMINI_CONFIG.lsKey, apiKey.trim());
@@ -376,7 +382,12 @@ function APIKeyWizard({ onComplete, onBack }) {
             </div>
             {testResult === "success" && (
               <div style={{ padding: "10px 16px", borderRadius: 8, background: "#22c55e15", border: "1px solid #22c55e44", color: "#22c55e", fontSize: 12, fontWeight: 700, marginBottom: 16 }}>
-                ✅ Gemini key validated! Connection successful.
+                ✅ ⚡ Power Mode — Gemini key validated! Instant research enabled.
+              </div>
+            )}
+            {testResult === "free" && (
+              <div style={{ padding: "10px 16px", borderRadius: 8, background: "#eab30815", border: "1px solid #eab30844", color: "#eab308", fontSize: 12, fontWeight: 700, marginBottom: 16, lineHeight: 1.5 }}>
+                ✅ 🆓 Free Tier — Key valid! Research may take 1-2 min per card (auto-retry mode).
               </div>
             )}
             {testResult === "error" && (

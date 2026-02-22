@@ -1439,8 +1439,16 @@ function APIKeySettings({ onClose }) {
           body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with only: OK" }] }] })
         }
       );
-      setTestResult(resp.ok ? "success" : "error");
-      if (resp.ok) localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
+      if (resp.ok) {
+        setTestResult("success");
+        localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
+      } else if (resp.status === 429) {
+        // 429 = key is valid, Google authenticated it, just rate limited
+        setTestResult("free");
+        localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
+      } else {
+        setTestResult("error");
+      }
     } catch { setTestResult("error"); }
   };
 
@@ -1480,12 +1488,13 @@ function APIKeySettings({ onClose }) {
             type={showKey ? "text" : "password"} value={key}
             onChange={e => { setKey(e.target.value); setTestResult(null); }}
             placeholder="AIzaSy... (paste your Google key)"
-            style={{ width: "100%", padding: "12px 50px 12px 14px", borderRadius: 8, border: `2px solid ${testResult === "success" ? "#22c55e" : testResult === "error" ? "#ef4444" : "#2a2a3a"}`, background: "#0a0a10", color: "#fff", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "12px 50px 12px 14px", borderRadius: 8, border: `2px solid ${testResult === "success" ? "#22c55e" : testResult === "free" ? "#eab308" : testResult === "error" ? "#ef4444" : "#2a2a3a"}`, background: "#0a0a10", color: "#fff", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", boxSizing: "border-box" }}
           />
           <button onClick={() => setShowKey(!showKey)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#ffffff44", fontSize: 16, cursor: "pointer" }}>{showKey ? "🙈" : "👁️"}</button>
         </div>
 
-        {testResult === "success" && <div style={{ padding: "8px 14px", borderRadius: 6, background: "#22c55e15", border: "1px solid #22c55e44", color: "#22c55e", fontSize: 11, fontWeight: 700, marginBottom: 12 }}>✅ Connection successful!</div>}
+        {testResult === "success" && <div style={{ padding: "8px 14px", borderRadius: 6, background: "#22c55e15", border: "1px solid #22c55e44", color: "#22c55e", fontSize: 11, fontWeight: 700, marginBottom: 12 }}>✅ ⚡ Power Mode — Connection successful!</div>}
+        {testResult === "free" && <div style={{ padding: "8px 14px", borderRadius: 6, background: "#eab30815", border: "1px solid #eab30844", color: "#eab308", fontSize: 11, fontWeight: 700, marginBottom: 12 }}>✅ 🆓 Free Tier — Key valid! Research will use retry mode (may take 1-2 min per card).</div>}
         {testResult === "error" && <div style={{ padding: "8px 14px", borderRadius: 6, background: "#ef444415", border: "1px solid #ef444444", color: "#ef4444", fontSize: 11, marginBottom: 12 }}>❌ Key rejected. Check your key and try again.</div>}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
