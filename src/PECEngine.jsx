@@ -357,30 +357,58 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
   let response = await callGemini(apiKey, userPrompt, true);
 
   let mode = "power";
+  let freeModelUsed = "gemini-2.0-flash";
 
-  // ── If 429: switch to Free Mode (lighter model + longer backoff) ──
+  // ── If 429: switch to Free Mode (cascade through model families) ──
   if (response.status === 429) {
     mode = "free";
-    onProgress({ stage: "researching", message: "🆓 Free tier detected — switching to Free Mode..." });
+    onProgress({ stage: "researching", message: "🆓 Free tier detected — trying alternative models..." });
     await sleep(1000);
 
-    // Free mode uses flash-lite (higher free-tier quotas) and waits for quota reset
-    const FREE_MODEL = "gemini-2.0-flash-lite";
-    const FREE_DELAYS = [60, 90, 120];
-    for (let attempt = 0; attempt < FREE_DELAYS.length; attempt++) {
-      const delaySec = FREE_DELAYS[attempt];
-      for (let s = delaySec; s > 0; s--) {
-        const mins = Math.floor(s / 60);
-        const secs = s % 60;
-        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-        onProgress({ stage: "researching", message: `🆓 Free Mode — waiting for quota reset: ${timeStr} (attempt ${attempt + 1}/${FREE_DELAYS.length})` });
-        await sleep(1000);
-      }
-      onProgress({ stage: "researching", message: `🆓 Free Mode — sending research request (attempt ${attempt + 1})...` });
-      response = await callGemini(apiKey, userPrompt, false, FREE_MODEL);
+    // Each model family has its own quota pool
+    const FREE_MODELS = [
+      { model: "gemini-2.0-flash-lite", label: "Flash Lite" },
+      { model: "gemini-1.5-flash", label: "1.5 Flash" },
+      { model: "gemini-1.5-flash-8b", label: "1.5 Flash 8B" },
+    ];
 
-      if (response.ok) break;
-      if (response.status !== 429) break;
+    let succeeded = false;
+    for (let i = 0; i < FREE_MODELS.length; i++) {
+      const { model: freeModel, label } = FREE_MODELS[i];
+
+      // Short delay between attempts
+      if (i > 0) {
+        for (let s = 15; s > 0; s--) {
+          onProgress({ stage: "researching", message: `🆓 Waiting ${s}s before trying ${label}... (${i + 1}/${FREE_MODELS.length})` });
+          await sleep(1000);
+        }
+      }
+
+      onProgress({ stage: "researching", message: `🆓 Trying ${label}...` });
+      response = await callGemini(apiKey, userPrompt, false, freeModel);
+
+      if (response.ok) {
+        freeModelUsed = freeModel;
+        succeeded = true;
+        break;
+      }
+
+      // Log the actual error for diagnostics
+      const errPreview = await response.text().catch(() => "");
+      const status = response.status;
+      console.warn(`Free mode: ${freeModel} returned ${status}:`, errPreview.slice(0, 150));
+
+      if (status !== 429) {
+        // Non-rate-limit error (e.g. 404 model not found) — try next model
+        onProgress({ stage: "researching", message: `🆓 ${label} unavailable (${status}), trying next...` });
+        continue;
+      }
+      onProgress({ stage: "researching", message: `🆓 ${label} quota exhausted, trying next model...` });
+    }
+
+    if (!succeeded && !response.ok) {
+      // All models exhausted — give clear guidance
+      throw new Error("All free-tier model quotas exhausted. Your daily free limit has been reached. Options: 1) Wait until tomorrow, or 2) Use a billing-enabled key (still free for low usage at Google).");
     }
   }
 
@@ -402,7 +430,7 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
   if (!fullText) throw new Error("Empty response from Gemini");
 
   onProgress({ stage: "parsing", message: `${modeLabel} — structuring PEC scores...` });
-  const actualModel = mode === "free" ? "gemini-2.0-flash-lite" : "gemini-2.0-flash";
+  const actualModel = mode === "free" ? freeModelUsed : "gemini-2.0-flash";
   return { parsed: extractJSON(fullText), model: actualModel, mode };
 }
 
