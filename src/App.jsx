@@ -16,9 +16,9 @@ const GEMINI_CONFIG = {
   studioUrl: "https://aistudio.google.com/apikey",
   studioLabel: "Google AI Studio",
   placeholder: "AIzaSy... (paste your Google key)",
-  testEndpoint: (key) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+  testEndpoint: () => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
   testBody: JSON.stringify({ contents: [{ parts: [{ text: "Reply with only: OK" }] }] }),
-  testHeaders: { "Content-Type": "application/json" },
+  testHeaders: (key) => ({ "Content-Type": "application/json", "x-goog-api-key": key }),
 };
 
 const LS_ONBOARDED = "elu_onboarded";
@@ -225,10 +225,10 @@ function APIKeyWizard({ onComplete, onBack }) {
     const models = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
     for (const model of models) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         const res = await fetch(url, {
           method: "POST",
-          headers: GEMINI_CONFIG.testHeaders,
+          headers: GEMINI_CONFIG.testHeaders(apiKey.trim()),
           body: GEMINI_CONFIG.testBody,
         });
         if (res.ok) {
