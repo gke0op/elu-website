@@ -1,24 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { getActiveProvider } from "./providers";
 
 // ═══════════════════════════════════════════════════════════════
 // PEC CARD ENGINE v2.0 — Earth Love United
 // AI-Powered Autonomous Research, Scoring & Card Minting
+// Zero-Claw Backbone — Agent-Agnostic Architecture
 // ═══════════════════════════════════════════════════════════════
-
 const ELU_SCHEMA_VERSION = "2.0.0";
 const CMP_MAX = 29403;
-
-// ─── PROVIDER CONFIGURATION ──────────────────────────────────
-
-const AI_PROVIDER = {
-  id: "gemini",
-  name: "Gemini 2.0 Flash",
-  icon: "✨",
-  keyLabel: "Google API Key",
-  lsKey: "elu_gemini_api_key",
-  studioUrl: "https://aistudio.google.com/apikey",
-  studioLabel: "Google AI Studio",
-};
 
 const LS_CARDS = "elu_pec_cards";
 
@@ -28,10 +17,6 @@ const SUGGESTED_SEARCHES = [
   "Direct air carbon capture",
   "Solid-state batteries",
 ];
-
-function getGeminiKey() {
-  return localStorage.getItem(AI_PROVIDER.lsKey) || "";
-}
 
 // ─── CARD PERSISTENCE ────────────────────────────────────────
 
@@ -327,123 +312,14 @@ function extractJSON(fullText) {
   return parsed;
 }
 
-// ─── GEMINI RESEARCH ─────────────────────────────────────────
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function callGemini(apiKey, prompt, useGrounding, model = "gemini-2.0-flash") {
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 4000 },
-  };
-  if (useGrounding) body.tools = [{ google_search: {} }];
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify(body),
-    }
-  );
-  return response;
-}
-
-async function runGeminiResearch(techQuery, apiKey, onProgress) {
-  const userPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n---\n\nResearch this sustainable technology thoroughly and provide a PEC assessment: "${techQuery}"\n\nSearch for current market data, recent developments, key companies, carbon impact studies, and technology readiness information. Be thorough — this assessment will be used for investment grading.`;
-
-  // ── ATTEMPT 1: Power Mode (grounded search) ──
-  onProgress({ stage: "researching", message: "⚡ Power Mode — researching with Google Search..." });
-  let response = await callGemini(apiKey, userPrompt, true);
-
-  let mode = "power";
-  let freeModelUsed = "gemini-2.0-flash";
-
-  // ── If 429: switch to Free Mode (cascade through model families) ──
-  if (response.status === 429) {
-    mode = "free";
-    onProgress({ stage: "researching", message: "🆓 Free tier detected — trying without search grounding..." });
-    await sleep(1000);
-
-    // Strategy: grounding has stricter quotas, so try same model without it first,
-    // then cascade to other model families (each has its own quota pool)
-    const FREE_MODELS = [
-      { model: "gemini-2.0-flash", label: "Flash (no grounding)" },
-      { model: "gemini-2.0-flash-lite", label: "Flash Lite" },
-      { model: "gemini-2.5-flash", label: "2.5 Flash" },
-    ];
-
-    let succeeded = false;
-    for (let i = 0; i < FREE_MODELS.length; i++) {
-      const { model: freeModel, label } = FREE_MODELS[i];
-
-      // Short delay between attempts (skip for first)
-      if (i > 0) {
-        for (let s = 10; s > 0; s--) {
-          onProgress({ stage: "researching", message: `🆓 Trying ${label} in ${s}s... (${i + 1}/${FREE_MODELS.length})` });
-          await sleep(1000);
-        }
-      }
-
-      onProgress({ stage: "researching", message: `🆓 Trying ${label}...` });
-      response = await callGemini(apiKey, userPrompt, false, freeModel);
-
-      if (response.ok) {
-        freeModelUsed = freeModel;
-        succeeded = true;
-        break;
-      }
-
-      const status = response.status;
-      if (status === 429) {
-        onProgress({ stage: "researching", message: `🆓 ${label} quota exhausted, trying next...` });
-      } else {
-        const errPreview = await response.text().catch(() => "");
-        console.warn(`Free mode: ${freeModel} → ${status}:`, errPreview.slice(0, 150));
-        onProgress({ stage: "researching", message: `🆓 ${label} error (${status}), trying next...` });
-      }
-    }
-
-    if (!succeeded && !response.ok) {
-      throw new Error("All free-tier model quotas exhausted. Your daily free limit has been reached. Options: 1) Wait until tomorrow, or 2) Use a billing-enabled key (still free for low usage at Google).");
-    }
-  }
-
-  if (!response.ok) {
-    const errText = await response.text();
-    if (response.status === 429) {
-      throw new Error("Rate limit exceeded on all retries. Free tier has limited requests/minute. Wait 60s and try again, or upgrade to a billing-enabled key for instant results.");
-    }
-    throw new Error(`Gemini API error ${response.status}: ${errText.slice(0, 200)}`);
-  }
-
-  const modeLabel = mode === "power" ? "⚡ Power Mode (grounded)" : "🆓 Free Mode";
-  onProgress({ stage: "researching", message: `${modeLabel} — parsing research data...` });
-
-  const data = await response.json();
-  const candidates = data.candidates || [];
-  const textParts = candidates[0]?.content?.parts?.filter(p => p.text) || [];
-  const fullText = textParts.map(p => p.text).join("\n");
-  if (!fullText) throw new Error("Empty response from Gemini");
-
-  onProgress({ stage: "parsing", message: `${modeLabel} — structuring PEC scores...` });
-  const actualModel = mode === "free" ? freeModelUsed : "gemini-2.0-flash";
-  return { parsed: extractJSON(fullText), model: actualModel, mode };
-}
-
 // ─── UNIFIED RESEARCH DISPATCHER ─────────────────────────────
 
 async function runAIResearch(techQuery, onProgress) {
-  onProgress({ stage: "connecting", message: `Connecting to ${AI_PROVIDER.name}...` });
-
-  const apiKey = getGeminiKey();
-  if (!apiKey) {
-    onProgress({ stage: "error", message: `No API key found. Use ⚙️ Settings to add your Google API key.` });
-    return { success: false, error: `Google API key not configured` };
-  }
+  const provider = getActiveProvider();
+  onProgress({ stage: "connecting", message: `Connecting to ${provider.name}...` });
 
   try {
-    const result = await runGeminiResearch(techQuery, apiKey, onProgress);
+    const result = await provider.research(techQuery, RESEARCH_SYSTEM_PROMPT, extractJSON, onProgress);
     const modeMsg = result.mode === "power" ? "⚡ Power Mode" : "🆓 Free Mode";
     onProgress({ stage: "complete", message: `Research complete! (${modeMsg})` });
     return { success: true, data: result.parsed, model: result.model, mode: result.mode };
@@ -623,12 +499,13 @@ function ResearchTerminal({ onMint }) {
     setShowJSON(false);
 
     addLog(`Initiating PEC research: "${q}"`, "cmd");
-    addLog(`Provider: ${AI_PROVIDER.icon} ${AI_PROVIDER.name}`, "info");
+    const _p = getActiveProvider();
+    addLog(`Provider: ${_p.icon} ${_p.name}`, "info");
     addLog("Connecting to AI research engine...", "info");
 
     const res = await runAIResearch(q, (progress) => {
       setStatus(progress);
-      if (progress.stage === "connecting") addLog(`${AI_PROVIDER.name} connected. Deploying research...`, "info");
+      if (progress.stage === "connecting") addLog(`${_p.name} connected. Deploying research...`, "info");
       if (progress.stage === "researching") addLog(progress.message, "search");
       if (progress.stage === "parsing") addLog(progress.message, "info");
       if (progress.stage === "complete") addLog(progress.message, "success");
@@ -755,10 +632,10 @@ function ResearchTerminal({ onMint }) {
           ))}
           <span style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: 6,
-            fontSize: 10, color: getGeminiKey() ? "#22c55e88" : "#ef444488",
+            fontSize: 10, color: getActiveProvider().getKey() ? "#22c55e88" : "#ef444488",
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: getGeminiKey() ? "#22c55e" : "#ef4444" }} />
-            {getGeminiKey() ? `${AI_PROVIDER.icon} ${AI_PROVIDER.name}` : "⚠ No API key — use ⚙️ Settings"}
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: getActiveProvider().getKey() ? "#22c55e" : "#ef4444" }} />
+            {(() => { const _p = getActiveProvider(); return _p.getKey() ? `${_p.icon} ${_p.name}` : "⚠ No API key — use ⚙️ Settings"; })()}
           </span>
         </div>
 
@@ -1451,7 +1328,8 @@ function ManualCreator({ onSave, onCancel }) {
 // ─── API KEY SETTINGS MODAL ──────────────────────────────────
 
 function APIKeySettings({ onClose }) {
-  const [key, setKey] = useState(getGeminiKey());
+  const provider = getActiveProvider();
+  const [key, setKey] = useState(provider.getKey());
   const [testResult, setTestResult] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -1460,30 +1338,16 @@ function APIKeySettings({ onClose }) {
     if (!key.trim()) return;
     setTestResult("testing");
     try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": key.trim() },
-          body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with only: OK" }] }] })
-        }
-      );
-      if (resp.ok) {
-        setTestResult("success");
-        localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
-      } else if (resp.status === 429) {
-        // 429 = key is valid, Google authenticated it, just rate limited
-        setTestResult("free");
-        localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
-      } else {
-        setTestResult("error");
+      const result = await provider.testKey(key.trim());
+      setTestResult(result);
+      if (result === "success" || result === "free") {
+        provider.saveKey(key.trim());
       }
     } catch { setTestResult("error"); }
   };
 
   const handleSave = () => {
-    if (key.trim()) localStorage.setItem(AI_PROVIDER.lsKey, key.trim());
-    else localStorage.removeItem(AI_PROVIDER.lsKey);
+    provider.saveKey(key.trim());
     onClose();
   };
 
@@ -1508,15 +1372,15 @@ function APIKeySettings({ onClose }) {
         </div>
 
         <div style={{ color: "#ffffff66", fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
-          {AI_PROVIDER.icon} <strong>{AI_PROVIDER.name}</strong> — Get your free key at{" "}
-          <a href={AI_PROVIDER.studioUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>{AI_PROVIDER.studioLabel}</a>
+          {provider.icon} <strong>{provider.name}</strong> — Get your free key at{" "}
+          <a href={provider.getKeyUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>{provider.getKeyLabel}</a>
         </div>
 
         <div style={{ position: "relative", marginBottom: 12 }}>
           <input
             type={showKey ? "text" : "password"} value={key}
             onChange={e => { setKey(e.target.value); setTestResult(null); }}
-            placeholder="AIzaSy... (paste your Google key)"
+            placeholder={provider.keyPlaceholder}
             style={{ width: "100%", padding: "12px 50px 12px 14px", borderRadius: 8, border: `2px solid ${testResult === "success" ? "#22c55e" : testResult === "free" ? "#eab308" : testResult === "error" ? "#ef4444" : "#2a2a3a"}`, background: "#0a0a10", color: "#fff", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", boxSizing: "border-box" }}
           />
           <button onClick={() => setShowKey(!showKey)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#ffffff44", fontSize: 16, cursor: "pointer" }}>{showKey ? "🙈" : "👁️"}</button>
@@ -1753,7 +1617,7 @@ export default function PECEngineV2({ initialTab = "research", onNavigateHome })
 
       <div style={{ marginTop: 40, paddingTop: 12, borderTop: "1px solid #1a1a2a", display: "flex", justifyContent: "space-between", color: "#ffffff18", fontSize: 9, letterSpacing: "0.1em" }}>
         <span>ELU PEC ENGINE v{ELU_SCHEMA_VERSION} • earthloveunited.org</span>
-        <span>MAX CMP {CMP_MAX.toLocaleString()} • AI: {lastModel ? lastModel.toUpperCase() : AI_PROVIDER.name.toUpperCase()}</span>
+        <span>MAX CMP {CMP_MAX.toLocaleString()} • AI: {lastModel ? lastModel.toUpperCase() : getActiveProvider().name.toUpperCase()}</span>
       </div>
     </div>
   );
