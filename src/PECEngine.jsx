@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { getActiveProvider } from "./providers";
+import { getActiveProvider, getProviderList, setActiveProvider } from "./providers";
 
 // ═══════════════════════════════════════════════════════════════
 // PEC CARD ENGINE v2.0 — Earth Love United
@@ -1328,11 +1328,21 @@ function ManualCreator({ onSave, onCancel }) {
 // ─── API KEY SETTINGS MODAL ──────────────────────────────────
 
 function APIKeySettings({ onClose }) {
+  const [activeId, setActiveId] = useState(getActiveProvider().id);
   const provider = getActiveProvider();
   const [key, setKey] = useState(provider.getKey());
   const [testResult, setTestResult] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const providers = getProviderList();
+
+  const switchProvider = (id) => {
+    setActiveProvider(id);
+    setActiveId(id);
+    const newP = getActiveProvider();
+    setKey(newP.getKey());
+    setTestResult(null);
+  };
 
   const testApiKey = async () => {
     if (!key.trim()) return;
@@ -1370,6 +1380,29 @@ function APIKeySettings({ onClose }) {
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: "#3b82f6" }}>⚙️ API Key Settings</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#ffffff44", fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
+
+        {/* Provider Selector */}
+        {providers.length > 1 && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            {providers.map(p => (
+              <button
+                key={p.id}
+                onClick={() => switchProvider(p.id)}
+                style={{
+                  flex: 1, padding: "8px 12px", borderRadius: 8,
+                  border: `2px solid ${activeId === p.id ? "#3b82f6" : "#1a1a2a"}`,
+                  background: activeId === p.id ? "#3b82f610" : "#0a0a10",
+                  color: activeId === p.id ? "#3b82f6" : "#ffffff44",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {p.icon} {p.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div style={{ color: "#ffffff66", fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
           {provider.icon} <strong>{provider.name}</strong> — Get your free key at{" "}
