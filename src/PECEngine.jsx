@@ -333,10 +333,10 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
   const userPrompt = `${RESEARCH_SYSTEM_PROMPT}\n\n---\n\nResearch this sustainable technology thoroughly and provide a PEC assessment: "${techQuery}"\n\nSearch for current market data, recent developments, key companies, carbon impact studies, and technology readiness information. Be thorough — this assessment will be used for investment grading.`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ parts: [{ text: userPrompt }] }],
         tools: [{ google_search: {} }],
@@ -1389,9 +1389,10 @@ function APIKeySettings({ onClose }) {
     setTestResult("testing");
     try {
       const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key.trim()}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
         {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key.trim() },
           body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with only: OK" }] }] })
         }
       );
