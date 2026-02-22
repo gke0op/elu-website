@@ -4,14 +4,14 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { geminiProvider } from "./gemini";
+import { openaiProvider } from "./openai";
 // Future providers:
-// import { openaiProvider } from "./openai";
 // import { claudeProvider } from "./claude";
 // import { ollamaProvider } from "./ollama";
 
 export const PROVIDERS = {
     gemini: geminiProvider,
-    // openai: openaiProvider,
+    openai: openaiProvider,
     // claude: claudeProvider,
     // ollama: ollamaProvider,
 };
