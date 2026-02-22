@@ -362,24 +362,25 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
   // ── If 429: switch to Free Mode (cascade through model families) ──
   if (response.status === 429) {
     mode = "free";
-    onProgress({ stage: "researching", message: "🆓 Free tier detected — trying alternative models..." });
+    onProgress({ stage: "researching", message: "🆓 Free tier detected — trying without search grounding..." });
     await sleep(1000);
 
-    // Each model family has its own quota pool
+    // Strategy: grounding has stricter quotas, so try same model without it first,
+    // then cascade to other model families (each has its own quota pool)
     const FREE_MODELS = [
+      { model: "gemini-2.0-flash", label: "Flash (no grounding)" },
       { model: "gemini-2.0-flash-lite", label: "Flash Lite" },
-      { model: "gemini-1.5-flash", label: "1.5 Flash" },
-      { model: "gemini-1.5-flash-8b", label: "1.5 Flash 8B" },
+      { model: "gemini-2.5-flash", label: "2.5 Flash" },
     ];
 
     let succeeded = false;
     for (let i = 0; i < FREE_MODELS.length; i++) {
       const { model: freeModel, label } = FREE_MODELS[i];
 
-      // Short delay between attempts
+      // Short delay between attempts (skip for first)
       if (i > 0) {
-        for (let s = 15; s > 0; s--) {
-          onProgress({ stage: "researching", message: `🆓 Waiting ${s}s before trying ${label}... (${i + 1}/${FREE_MODELS.length})` });
+        for (let s = 10; s > 0; s--) {
+          onProgress({ stage: "researching", message: `🆓 Trying ${label} in ${s}s... (${i + 1}/${FREE_MODELS.length})` });
           await sleep(1000);
         }
       }
@@ -393,21 +394,17 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
         break;
       }
 
-      // Log the actual error for diagnostics
-      const errPreview = await response.text().catch(() => "");
       const status = response.status;
-      console.warn(`Free mode: ${freeModel} returned ${status}:`, errPreview.slice(0, 150));
-
-      if (status !== 429) {
-        // Non-rate-limit error (e.g. 404 model not found) — try next model
-        onProgress({ stage: "researching", message: `🆓 ${label} unavailable (${status}), trying next...` });
-        continue;
+      if (status === 429) {
+        onProgress({ stage: "researching", message: `🆓 ${label} quota exhausted, trying next...` });
+      } else {
+        const errPreview = await response.text().catch(() => "");
+        console.warn(`Free mode: ${freeModel} → ${status}:`, errPreview.slice(0, 150));
+        onProgress({ stage: "researching", message: `🆓 ${label} error (${status}), trying next...` });
       }
-      onProgress({ stage: "researching", message: `🆓 ${label} quota exhausted, trying next model...` });
     }
 
     if (!succeeded && !response.ok) {
-      // All models exhausted — give clear guidance
       throw new Error("All free-tier model quotas exhausted. Your daily free limit has been reached. Options: 1) Wait until tomorrow, or 2) Use a billing-enabled key (still free for low usage at Google).");
     }
   }
