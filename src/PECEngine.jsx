@@ -331,7 +331,7 @@ function extractJSON(fullText) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function callGemini(apiKey, prompt, useGrounding) {
+async function callGemini(apiKey, prompt, useGrounding, model = "gemini-2.0-flash") {
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { temperature: 0.7, maxOutputTokens: 4000 },
@@ -339,7 +339,7 @@ async function callGemini(apiKey, prompt, useGrounding) {
   if (useGrounding) body.tools = [{ google_search: {} }];
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -358,26 +358,29 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
 
   let mode = "power";
 
-  // ── If 429: switch to Free Mode (no grounding + retry with backoff) ──
+  // ── If 429: switch to Free Mode (lighter model + longer backoff) ──
   if (response.status === 429) {
     mode = "free";
-    onProgress({ stage: "researching", message: "🆓 Free tier detected — switching to Free Mode (no search grounding)..." });
-    await sleep(2000);
+    onProgress({ stage: "researching", message: "🆓 Free tier detected — switching to Free Mode..." });
+    await sleep(1000);
 
-    const FREE_DELAYS = [0, 10, 20, 30, 45];
+    // Free mode uses flash-lite (higher free-tier quotas) and waits for quota reset
+    const FREE_MODEL = "gemini-2.0-flash-lite";
+    const FREE_DELAYS = [60, 90, 120];
     for (let attempt = 0; attempt < FREE_DELAYS.length; attempt++) {
       const delaySec = FREE_DELAYS[attempt];
-      if (delaySec > 0) {
-        for (let s = delaySec; s > 0; s--) {
-          onProgress({ stage: "researching", message: `🆓 Free Mode — rate limited, retrying in ${s}s... (attempt ${attempt + 1}/${FREE_DELAYS.length})` });
-          await sleep(1000);
-        }
+      for (let s = delaySec; s > 0; s--) {
+        const mins = Math.floor(s / 60);
+        const secs = s % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        onProgress({ stage: "researching", message: `🆓 Free Mode — waiting for quota reset: ${timeStr} (attempt ${attempt + 1}/${FREE_DELAYS.length})` });
+        await sleep(1000);
       }
       onProgress({ stage: "researching", message: `🆓 Free Mode — sending research request (attempt ${attempt + 1})...` });
-      response = await callGemini(apiKey, userPrompt, false);
+      response = await callGemini(apiKey, userPrompt, false, FREE_MODEL);
 
       if (response.ok) break;
-      if (response.status !== 429) break; // non-rate-limit error, let it fall through
+      if (response.status !== 429) break;
     }
   }
 
@@ -399,7 +402,8 @@ async function runGeminiResearch(techQuery, apiKey, onProgress) {
   if (!fullText) throw new Error("Empty response from Gemini");
 
   onProgress({ stage: "parsing", message: `${modeLabel} — structuring PEC scores...` });
-  return { parsed: extractJSON(fullText), model: "gemini-2.0-flash", mode };
+  const actualModel = mode === "free" ? "gemini-2.0-flash-lite" : "gemini-2.0-flash";
+  return { parsed: extractJSON(fullText), model: actualModel, mode };
 }
 
 // ─── UNIFIED RESEARCH DISPATCHER ─────────────────────────────
