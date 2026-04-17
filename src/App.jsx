@@ -1,6 +1,7 @@
 import { useState, useEffect, Component } from "react";
 import PECEngine from "./PECEngine";
 import { getActiveProvider } from "./providers";
+import ELUIntroduction from "./ELUIntroduction";
 import "./App.css";
 
 // ═══════════════════════════════════════════════════════════════
@@ -536,7 +537,13 @@ export default function App() {
   // Check if user has already onboarded
   const hasApiKey = hasKey();
   const wasOnboarded = localStorage.getItem(LS_ONBOARDED) === "true";
-  const [screen, setScreen] = useState(hasApiKey && wasOnboarded ? "engine" : "home");
+  const lsLoreSeen = localStorage.getItem("elu_lore_seen") === "true";
+
+  const initialScreen = lsLoreSeen 
+    ? (hasApiKey && wasOnboarded ? "engine" : "home")
+    : "intro";
+
+  const [screen, setScreen] = useState(initialScreen);
   const [initialTab, setInitialTab] = useState("research");
   const [showManualTutorial, setShowManualTutorial] = useState(false);
 
@@ -547,6 +554,13 @@ export default function App() {
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
         * { box-sizing: border-box; }
       `}</style>
+
+      {screen === "intro" && (
+        <ELUIntroduction onComplete={() => {
+          localStorage.setItem("elu_lore_seen", "true");
+          setScreen(hasApiKey && wasOnboarded ? "engine" : "home");
+        }} />
+      )}
 
       {screen === "home" && (
         <Homepage

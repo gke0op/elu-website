@@ -79,3 +79,197 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #ffffff30;
 }
+/* ELU Intro Journey Screen - Glassmorphic */
+.elu-intro-container {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #08080c;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  opacity: 0;
+  transition: opacity 1s ease;
+}
+
+.elu-intro-container.mounted {
+  opacity: 1;
+}
+
+.elu-intro-bg {
+  position: absolute;
+  inset: 0;
+  transition: background 0.8s ease;
+  z-index: 1;
+}
+
+.elu-glass-panel {
+  position: relative;
+  z-index: 10;
+  max-width: 650px;
+  width: 90%;
+  padding: 40px;
+  border-radius: 24px;
+  background: rgba(13, 13, 18, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+}
+
+.elu-slide-progress {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 30px;
+}
+
+.elu-progress-dot {
+  width: 12px;
+  height: 4px;
+  border-radius: 2px;
+  background: #ffffff15;
+  transition: all 0.4s ease;
+}
+
+.elu-progress-dot.active {
+  width: 24px;
+}
+
+.elu-progress-dot.completed {
+  opacity: 0.5;
+}
+
+.elu-slide-content {
+  text-align: center;
+  flex-grow: 1;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  animation: eluFadeIn 0.5s ease-out;
+}
+
+.elu-slide-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  filter: drop-shadow(0px 10px 15px rgba(0,0,0,0.5));
+}
+
+.elu-slide-header h4 {
+  font-size: 14px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.elu-slide-header h2 {
+  font-size: 36px;
+  font-weight: 900;
+  margin: 0 0 24px;
+  letter-spacing: -0.02em;
+}
+
+.elu-slide-body {
+  color: #ffffffaa;
+  font-size: 15px;
+  line-height: 1.8;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.elu-slide-body strong {
+  color: #fff;
+}
+
+.elu-slide-body ul {
+  text-align: left;
+  margin-top: 16px;
+  padding-left: 20px;
+}
+
+.elu-slide-body li {
+  margin-bottom: 8px;
+}
+
+.elu-resources {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.elu-btn-outline {
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffffcc;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.elu-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+.elu-slide-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.elu-btn-secondary {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff77;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.elu-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.elu-btn-primary {
+  border: none;
+  color: #000;
+  padding: 12px 28px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.elu-btn-primary:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.2);
+}
+
+.elu-btn-launch {
+  background: linear-gradient(135deg, #10b981, #3b82f6);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
